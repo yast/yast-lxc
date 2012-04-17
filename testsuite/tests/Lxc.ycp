@@ -1,0 +1,13 @@
+{
+
+// testedfiles: Lxc.ycp
+
+include "testsuite.ycp";
+TESTSUITE_INIT([], nil);
+
+import "Lxc";
+
+DUMP("Lxc::Modified");
+TEST(``(Lxc::Modified()), [], nil);
+
+}

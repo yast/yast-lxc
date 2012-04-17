@@ -1,0 +1,298 @@
+/* ------------------------------------------------------------------------------
+ * Copyright (c) 2006 Novell, Inc. All Rights Reserved.
+ *
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of version 2 of the GNU General Public License as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, contact Novell, Inc.
+ *
+ * To contact Novell about this file by physical or electronic mail, you may find
+ * current contact information at www.novell.com.
+ * ------------------------------------------------------------------------------
+ */
+
+/**
+ * File:	include/lxc/dialogs.ycp
+ * Package:	Configuration of lxc
+ * Summary:	Dialogs definitions
+ * Authors:	Jiri Suchomel <jsuchome@suse.cz>
+ *
+ * $Id$
+ */
+
+{
+
+textdomain "lxc";
+
+import "FileUtils";
+import "IP";
+import "Label";
+import "Popup";
+import "Progress";
+import "Report";
+import "Security";
+import "Wizard";
+
+
+list<term> read_templates () {
+
+  list<term> ret      = [];
+  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2 -d -");
+  if (out["stdout"]:"" != "")
+  {
+    foreach (string line, splitstring (out["stdout"]:"", "\n"), {
+      if (line != "")
+      {
+        ret     = add (ret, `item (line, line == "sles"));
+      }
+    });
+  }
+  return ret;
+}
+
+// encrypt given password using current method
+string crypt_password (string pw, string method) {
+
+    if (method == "md5")
+	return cryptmd5 (pw);
+    if (method == "blowfish")
+	return cryptblowfish (pw);
+    if (method == "sha256")
+	return cryptsha256 (pw);
+    if (method == "sha512")
+	return cryptsha512 (pw);
+    return crypt (pw);
+}
+
+/**
+ * Configure1 dialog
+ * @return dialog result
+ */
+any LxcDialog () {
+
+    boolean orig        = Progress::set (false);
+    Security::Read ();
+    Progress::set (orig);
+
+    map security        = Security::Export ();
+    string method       = tolower (security["PASSWD_ENCRYPTION"]:"des");
+
+    /* Lxc configure1 dialog caption */
+    string caption = _("LXC Configuration");
+
+    list<string> bridge_items   = [ "br0", "br1" ];
+    list<term> template_items = read_templates ();
+
+    term contents = `HBox (`HSpacing (), `VBox (
+      `VSpacing (),
+      // text entry
+      `Left (`TextEntry (`id (`name), _("Container Name"))),
+      // combo box label
+      `Left (`ComboBox (`id (`template), `opt (`hstretch), _("Template"), template_items)),
+      `VSpacing (),
+      // frame label
+      `Frame (_("Network Settings"), `HBox (
+        `HSpacing (0.5), `VBox (
+	  `VSpacing (0.5),
+          `HBox (
+            `TextEntry (`id (`ip), _("IP Address")),
+            `TextEntry (`id (`subnet), _("Subnet"), "/24")
+          ),
+          `Left (`ComboBox (`id (`bridge), _("Bridge"), bridge_items))
+        ),
+        `HSpacing (0.5)
+      )),
+      // frame label
+      `Frame (_("Password Settings"), `HBox (
+        `HSpacing (0.5),
+        // password entry
+        `HWeight (1, `Password (`id (`pw1), _("Root Password"))),
+        // password entry
+        `HWeight (1, `Password (`id (`pw2), _("Repeat Password"))),
+        `HSpacing (0.5)
+      )),
+      `VSpacing (2),
+      `ReplacePoint (`id (`rpbutton),
+          // button label
+          `PushButton (`id (`start), _("Create New Container"))
+      )
+    ), `HSpacing ());
+
+    string help_text    = "";
+
+    Wizard::CreateDialog();
+    Wizard::SetContentsButtons(caption, contents, help_text,
+	    Label::BackButton(), Label::CloseButton());
+    Wizard::HideBackButton ();
+    Wizard::HideAbortButton ();
+
+    UI::ChangeWidget (`id (`ip), `ValidChars, IP::ValidChars4);
+
+    any ret = nil;
+    while(true) {
+
+	ret = UI::UserInput();
+
+	if (ret == `abort || ret == `cancel || ret == `next || ret == `back) {
+            break;
+        }
+
+        string name     = (string) UI::QueryWidget (`id (`name), `Value);
+        string ip       = (string) UI::QueryWidget (`id (`ip), `Value);
+        string subnet   = (string) UI::QueryWidget (`id (`subnet), `Value);
+        string bridge   = (string) UI::QueryWidget (`id (`bridge), `Value);
+        string template = (string) UI::QueryWidget (`id (`template), `Value);
+        string pw1      = (string) UI::QueryWidget (`id (`pw1), `Value);
+        string pw2      = (string) UI::QueryWidget (`id (`pw2), `Value);
+
+        if (name == "")
+        {
+            // error popup
+            Report::Error (_("Name was not entered."));
+            UI::SetFocus (`id (`name));
+            continue;
+        }
+
+        if (ip != "" && !IP::Check (ip))
+        {
+            Report::Error (IP::Valid4 ());
+            UI::SetFocus (`id (`ip));
+            continue;
+        }
+        if (pw1 != pw2)
+        {
+            // error message
+            Report::Error (_("The passwords do not match."));
+            UI::SetFocus (`id (`pw1));
+            continue;
+        }
+
+        if (ret == `start)
+        {
+            // busy message
+            Popup::ShowFeedback ("", "Creating Configuration...");
+
+            // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
+            string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
+            if (ip != "")
+            {
+                cmd     = cmd + " -i " + ip;
+                if (subnet != "")
+                {
+                  if (substring (subnet, 0, 1) != "/")
+                  {
+                    cmd = cmd + "/";
+                  }
+                  cmd   = cmd + subnet;
+                }
+            }
+
+            if (bridge != "")
+            {
+                cmd     = cmd + " -b " + bridge;
+            }
+
+            if (template != "")
+            {
+                cmd     = cmd + " -t " + template;
+            }
+
+            y2internal ("cmd: %1", cmd);
+
+            map out     = (map) SCR::Execute (.target.bash_output, cmd);
+
+            y2internal ("out: %1", out);
+
+            Popup::ClearFeedback ();
+
+            if (out["exit"]:0 != 0)
+            {
+                // error message
+                Report::Error (sformat (_("Error occured during configuration:
+
+%1"), out["stdout"]:""));
+                continue;
+            }
+
+            // busy message
+            Popup::ShowFeedback ("", "Creating Container...");
+
+            // lxc-create -n <name> -f /root/<name>.config -t <template>
+            cmd = sformat ("lxc-create -n %1 -f /root/%1.config", name);
+            if (template != "")
+            {
+                cmd     = cmd + " -t " + template;
+            }
+            y2internal ("cmd: %1", cmd);
+
+            out     = (map) SCR::Execute (.target.bash_output, cmd);
+
+            y2internal ("out: %1", out);
+
+            Popup::ClearFeedback ();
+
+            if (out["exit"]:0 != 0)
+            {
+                Report::Error (sformat (_("Error occured during container creation:
+
+%1"), out["stdout"]:""));
+                continue;
+            }
+
+            // busy message
+            Popup::ShowFeedback ("", "Saving Root Password...");
+
+            string password     = crypt_password (pw1, method);
+
+            string file = sformat ("/var/lib/lxc/%1/rootfs/etc/shadow", name);
+            if (pw1 != "" && FileUtils::Exists (file))
+            {
+              // change the root password in the file /var/lib/lxc/<name>/rootfs/etc/shadow/
+              SCR::Execute (.target.bash, sformat ("sed --in-place 's/^root:[^:]*:/root:%1:/' %2",
+                  password, file));
+            }
+            Popup::ClearFeedback ();
+
+            cmd = sformat ("xterm -e lxc-start -n %1", name);
+
+            integer id	= (integer) SCR::Execute (.process.start_shell, cmd);
+            UI::ReplaceWidget (`id (`rpbutton),
+              `PushButton (`id (`cancel), Label::CancelButton ())
+            );
+            while (true)
+            {
+	      symbol ui = (symbol) UI::PollInput();
+	      if (SCR::Read(.process.running, id) != true)
+              {
+                  break;
+              }
+              if (ui == `cancel)
+              {
+                  y2internal ("lxc-stop: %1",
+                    SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
+                  );
+                  break;
+              }
+            }
+            UI::ReplaceWidget (`id (`rpbutton),
+              `PushButton (`id (`start), _("Create New Container"))
+            );
+            continue;
+        }
+    }
+
+    UI::CloseDialog();
+
+    return ret;
+}
+
+
+/* EOF */
+}
