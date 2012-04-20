@@ -96,6 +96,8 @@ any LxcDialog () {
     map security        = Security::Export ();
     string method       = tolower (security["PASSWD_ENCRYPTION"]:"des");
 
+    boolean textmode = UI::GetDisplayInfo()["TextMode"]:false;
+
     /* Lxc configure1 dialog caption */
     string caption = _("LXC Configuration");
 
@@ -329,6 +331,11 @@ any LxcDialog () {
         {
             string cmd = sformat ("xterm -e lxc-start -n %1", name);
 
+            if (textmode)
+            {
+              cmd       = sformat ("lxc-start -d -n %1", name);
+            }
+
             UI::ReplaceWidget (`id (`rp_status), `Label (`id (`status), ""));
 
             integer id	= (integer) SCR::Execute (.process.start_shell, cmd);
@@ -336,6 +343,12 @@ any LxcDialog () {
               `PushButton (`id (`cancel), Label::CancelButton ())
             );
             UI::ChangeWidget (`id (`destroy), `Enabled, false);
+            if (textmode)
+            {
+              // message
+              Popup::Message (sformat (_("The Container '%1' was started in the background.
+Use 'lxc-console' command to connect to the running Container."), name));
+            }
             while (true)
             {
 	      symbol ui = (symbol) UI::PollInput();
@@ -364,7 +377,7 @@ any LxcDialog () {
             // busy message
             Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
 
-            string cmd = "lxc-destroy -n " + name;
+            string cmd = "lxc-destroy -f -n " + name;
             map out     = (map) SCR::Execute (.target.bash_output, cmd);
 
             y2internal ("out: %1", out);
