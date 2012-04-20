@@ -71,6 +71,18 @@ string crypt_password (string pw, string method) {
     return crypt (pw);
 }
 
+list<string> read_bridges_ids () {
+
+    map out     = (map) SCR::Execute (.target.bash_output, "brctl show | tail -n +2 | cut -f 1");
+    list<string> ret    = [];
+
+    if (out["stdout"]:"" != "")
+    {
+      ret       = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
+    }
+    return ret;
+}
+
 /**
  * Configure1 dialog
  * @return dialog result
@@ -87,28 +99,41 @@ any LxcDialog () {
     /* Lxc configure1 dialog caption */
     string caption = _("LXC Configuration");
 
-    list<string> bridge_items   = [ "br0", "br1" ];
     list<term> template_items = read_templates ();
 
     term contents = `HBox (`HSpacing (), `VBox (
       `VSpacing (),
-      // text entry
-      `Left (`TextEntry (`id (`name), _("Container Name"))),
-      // combo box label
-      `Left (`ComboBox (`id (`template), `opt (`hstretch), _("Template"), template_items)),
+      // frame label
+      `Frame (_("New Container"), `HBox (
+        `HSpacing (0.5),
+        // text entry
+        `Left (`TextEntry (`id (`name), _("Name"))),
+        // combo box label
+        `ComboBox (`id (`template), _("Template"), template_items)
+      )),
       `VSpacing (),
       // frame label
       `Frame (_("Network Settings"), `HBox (
         `HSpacing (0.5), `VBox (
-	  `VSpacing (0.5),
           `HBox (
+            // text entry label
             `TextEntry (`id (`ip), _("IP Address")),
-            `TextEntry (`id (`subnet), _("Subnet"), "/24")
+            // text entry label
+            `TextEntry (`id (`subnet), _("Subnet"), "/24"),
+            `ReplacePoint (`id (`rp_lan),
+              // combo box label
+              `ComboBox (`id (`bridge), _("Bridge"), read_bridges_ids ())
+            )
           ),
-          `Left (`ComboBox (`id (`bridge), _("Bridge"), bridge_items))
+          `VSpacing (0.5),
+          `Right (
+            // push button label
+            `PushButton (`id (`lan), _("Configure Network..."))
+          )
         ),
         `HSpacing (0.5)
       )),
+      `VSpacing (),
       // frame label
       `Frame (_("Password Settings"), `HBox (
         `HSpacing (0.5),
@@ -119,9 +144,19 @@ any LxcDialog () {
         `HSpacing (0.5)
       )),
       `VSpacing (2),
-      `ReplacePoint (`id (`rpbutton),
+      `ReplacePoint (`id (`rp_status),
+          `Label (`id (`status), "")
+      ),
+      `VSpacing (),
+      `HBox (
           // button label
-          `PushButton (`id (`start), _("Create New Container"))
+          `PushButton (`id (`create), _("Create")),
+          `ReplacePoint (`id (`rpbutton),
+            // button label
+            `PushButton (`id (`start), _("Start"))
+          ),
+          // button label
+          `PushButton (`id (`destroy), _("Destroy"))
       )
     ), `HSpacing ());
 
@@ -135,6 +170,10 @@ any LxcDialog () {
 
     UI::ChangeWidget (`id (`ip), `ValidChars, IP::ValidChars4);
 
+    foreach (any b, [ `start, `destroy ], {
+      UI::ChangeWidget (`id (b), `Enabled, false);
+    });
+
     any ret = nil;
     while(true) {
 
@@ -142,6 +181,19 @@ any LxcDialog () {
 
 	if (ret == `abort || ret == `cancel || ret == `next || ret == `back) {
             break;
+        }
+
+        if (ret == `lan)
+        {
+            any lan_ret = WFM::CallFunction ("lan");
+            if (lan_ret == `next || lan_ret == `finish)
+            {
+              UI::ReplaceWidget (`id (`rp_lan),
+                // combo box label
+                `ComboBox (`id (`bridge), _("Bridge"), read_bridges_ids ())
+              );
+            }
+            continue;
         }
 
         string name     = (string) UI::QueryWidget (`id (`name), `Value);
@@ -174,10 +226,10 @@ any LxcDialog () {
             continue;
         }
 
-        if (ret == `start)
+        if (ret == `create)
         {
             // busy message
-            Popup::ShowFeedback ("", "Creating Configuration...");
+            Popup::ShowFeedback ("", _("Creating Configuration..."));
 
             // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
             string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
@@ -222,7 +274,7 @@ any LxcDialog () {
             }
 
             // busy message
-            Popup::ShowFeedback ("", "Creating Container...");
+            Popup::ShowFeedback ("", sformat (_("Creating Container %1..."), name));
 
             // lxc-create -n <name> -f /root/<name>.config -t <template>
             cmd = sformat ("lxc-create -n %1 -f /root/%1.config", name);
@@ -247,25 +299,43 @@ any LxcDialog () {
             }
 
             // busy message
-            Popup::ShowFeedback ("", "Saving Root Password...");
+            Popup::ShowFeedback ("", _("Saving Root Password..."));
 
             string password     = crypt_password (pw1, method);
 
             string file = sformat ("/var/lib/lxc/%1/rootfs/etc/shadow", name);
             if (pw1 != "" && FileUtils::Exists (file))
             {
+              // slash would break sed command
+              password  = mergestring (splitstring (password, "/"), "\\/");
               // change the root password in the file /var/lib/lxc/<name>/rootfs/etc/shadow/
-              SCR::Execute (.target.bash, sformat ("sed --in-place 's/^root:[^:]*:/root:%1:/' %2",
-                  password, file));
+              cmd       = sformat ("sed --in-place 's/^root:[^:]*:/root:%1:/' %2", password, file);
+              out       = (map) SCR::Execute (.target.bash_output, cmd);
+              y2security ("out: %1", out);
             }
             Popup::ClearFeedback ();
+            foreach (any t, [ `create, `name, `ip, `subnet, `bridge, `lan, `template, `pw1, `pw2 ], {
+              UI::ChangeWidget (`id (t), `Enabled, false);
+            });
+            UI::ChangeWidget (`id (`start), `Enabled, true);
+            UI::ChangeWidget (`id (`destroy), `Enabled, true);
+            UI::ReplaceWidget (`id (`rp_status),
+              // status text
+              `Label (`id (`status), sformat (_("Container '%1' was successfully created."), name))
+            );
+            continue;
+        }
+        if (ret == `start)
+        {
+            string cmd = sformat ("xterm -e lxc-start -n %1", name);
 
-            cmd = sformat ("xterm -e lxc-start -n %1", name);
+            UI::ReplaceWidget (`id (`rp_status), `Label (`id (`status), ""));
 
             integer id	= (integer) SCR::Execute (.process.start_shell, cmd);
             UI::ReplaceWidget (`id (`rpbutton),
               `PushButton (`id (`cancel), Label::CancelButton ())
             );
+            UI::ChangeWidget (`id (`destroy), `Enabled, false);
             while (true)
             {
 	      symbol ui = (symbol) UI::PollInput();
@@ -281,9 +351,41 @@ any LxcDialog () {
                   break;
               }
             }
+            UI::ChangeWidget (`id (`destroy), `Enabled, true);
             UI::ReplaceWidget (`id (`rpbutton),
-              `PushButton (`id (`start), _("Create New Container"))
+              `PushButton (`id (`start), _("Start"))
             );
+            continue;
+        }
+        if (ret == `destroy)
+        {
+            UI::ReplaceWidget (`id (`rp_status), `Label (`id (`status), ""));
+
+            // busy message
+            Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
+
+            string cmd = "lxc-destroy -n " + name;
+            map out     = (map) SCR::Execute (.target.bash_output, cmd);
+
+            y2internal ("out: %1", out);
+
+            Popup::ClearFeedback ();
+
+            if (out["exit"]:0 != 0)
+            {
+                // error message
+                Report::Error (sformat (_("Error while destroying:
+
+%1"), out["stdout"]:""));
+            }
+            else
+            {
+                foreach (any t, [ `create, `name, `ip, `subnet, `bridge, `lan, `template, `pw1, `pw2 ], {
+                  UI::ChangeWidget (`id (t), `Enabled, true);
+                });
+                UI::ChangeWidget (`id (`start), `Enabled, false);
+                UI::ChangeWidget (`id (`destroy), `Enabled, false);
+            }
             continue;
         }
     }
