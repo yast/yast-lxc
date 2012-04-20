@@ -36,106 +36,76 @@ module "Lxc";
 textdomain "lxc";
 
 import "Progress";
-import "Report";
-import "Summary";
-import "Message";
+import "Security";
 
-/**
- * Prototypes
- */
-global boolean Modified();
 
-/**
- * Data was modified?
- */
-boolean modified = false;
+// text or graphic mode?
+global boolean textmode        = false;
 
-/**
- */
-boolean proposal_valid = false;
+// current password encryption method
+string method           = "des";
 
-/**
- * Write only, used during autoinstallation.
- * Don't run services and SuSEconfig, it's all done at one place.
- */
-boolean write_only = false;
+// read list of available templates
+global list<term> ReadTemplates () {
 
-/**
- * Abort function
- * return boolean return true if abort
- */
-boolean() AbortFunction = Modified;
-
-/**
- * Abort function
- * @return boolean return true if abort
- */
-global define boolean Abort() ``{
-    if(AbortFunction != nil)
-    {
-	return AbortFunction () == true;
-    }
-    return false;
-}
-
-/**
- * Data was modified?
- * @return true if modified
- */
-global boolean Modified() {
-    y2debug("modified=%1",modified);
-    return modified;
-}
-
-/**
- * Mark as modified, for Autoyast.
- */
-global void SetModified(boolean value) {
-      modified = true;
+  list<term> ret      = [];
+  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2 -d -");
+  if (out["stdout"]:"" != "")
+  {
+    foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
+      if (line != "")
+      {
+        ret     = add (ret,
+          // sles goes later = selected if present
+          `item (line, line == "sles" || line == "opensuse"));
+      }
+    });
   }
-
-global boolean ProposalValid() {
-    return proposal_valid;
+  return ret;
 }
 
-global void SetProposalValid(boolean value) {
-    proposal_valid = value;
+// encrypt given password using current method
+global string CryptPassword (string pw) {
+
+    if (method == "md5")
+	return cryptmd5 (pw);
+    if (method == "blowfish")
+	return cryptblowfish (pw);
+    if (method == "sha256")
+	return cryptsha256 (pw);
+    if (method == "sha512")
+	return cryptsha512 (pw);
+    return crypt (pw);
 }
 
-/**
- * @return true if module is marked as "write only" (don't start services etc...)
- */
-global boolean WriteOnly() {
-    return write_only;
+global list<string> ReadBridgesIds () {
+
+    map out     = (map) SCR::Execute (.target.bash_output, "brctl show | tail -n +2 | cut -f 1");
+    list<string> ret    = [];
+
+    if (out["stdout"]:"" != "")
+    {
+      ret       = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
+    }
+    return ret;
 }
 
-/**
- * Set write_only flag (for autoinstalation).
- */
-global void SetWriteOnly(boolean value) {
-    write_only = value;
+global list<term> GetContainers () {
+
+  list<term> ret      = [];
+  map out = (map) SCR::Execute (.target.bash_output, "lxc-ls -1");
+out["stdout"]   = "suse1\nsles\n";
+  foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
+    if (line != "")
+    {
+      string cmd= sformat ("lxc-info -n %1 | grep state", line);
+      out       = (map) SCR::Execute (.target.bash_output, cmd, $[ "LANG" : "C" ]);
+      // FIXME read status
+      ret     = add (ret, `item (line, _("Stopped")));
+    }
+  });
+  return ret;
 }
-
-
-global void SetAbortFunction(boolean() function) {
-    AbortFunction = function;
-}
-
-
-// Settings: Define all variables needed for configuration of lxc
-// TODO FIXME: Define all the variables necessary to hold
-// TODO FIXME: the configuration here (with the appropriate
-// TODO FIXME: description)
-// TODO FIXME: For example:
-//   /**
-//    * List of the configured cards.
-//    */
-//   list cards = [];
-//
-//   /**
-//    * Some additional parameter needed for the configuration.
-//    */
-//   boolean additional_parameter = true;
 
 /**
  * Read all lxc settings
@@ -144,179 +114,48 @@ global void SetAbortFunction(boolean() function) {
 global boolean Read() {
 
     /* Lxc read dialog caption */
-    string caption = _("Initializing lxc Configuration");
+    string caption = _("Initializing LXC Configuration");
 
-    // TODO FIXME Set the right number of stages
-    integer steps = 4;
-
-    integer sl = 500;
-    sleep(sl);
-
-    // TODO FIXME Names of real stages
-    // We do not set help text here, because it was set outside
-    Progress::New( caption, " ", steps, [
-	    /* Progress stage 1/3 */
-	    _("Read the database"),
-	    /* Progress stage 2/3 */
-	    _("Read the previous settings"),
-	    /* Progress stage 3/3 */
-	    _("Detect the devices")
-	], [
-	    /* Progress step 1/3 */
-	    _("Reading the database..."),
-	    /* Progress step 2/3 */
-	    _("Reading the previous settings..."),
-	    /* Progress step 3/3 */
-	    _("Detecting the devices..."),
-	    /* Progress finished */
-	    _("Finished")
-	],
-	""
-    );
-
-    // read database
-    if(Abort()) return false;
-    Progress::NextStage();
-    /* Error message */
-    if(false) Report::Error(_("Cannot read database1."));
-    sleep(sl);
-
-    // read another database
-    if(Abort()) return false;
-    Progress::NextStep();
-    /* Error message */
-    if(false) Report::Error(_("Cannot read database2."));
-    sleep(sl);
-
-    // read current settings
-    if(Abort()) return false;
-    Progress::NextStage();
-    /* Error message */
-    if(false) Report::Error(Message::CannotReadCurrentSettings());
-    sleep(sl);
-
-    // detect devices
-    if(Abort()) return false;
-    Progress::NextStage();
-    /* Error message */
-    if(false) Report::Warning(_("Cannot detect devices."));
-    sleep(sl);
-
-    if(Abort()) return false;
-    /* Progress finished */
-    Progress::NextStage();
-    sleep(sl);
-
-    if(Abort()) return false;
-    modified = false;
-    return true;
-}
-
-/**
- * Write all lxc settings
- * @return true on success
- */
-global boolean Write() {
-
-    /* Lxc read dialog caption */
-    string caption = _("Saving lxc Configuration");
-
-    // TODO FIXME And set the right number of stages
     integer steps = 2;
 
-    integer sl = 500;
-    sleep(sl);
-
-    // TODO FIXME Names of real stages
     // We do not set help text here, because it was set outside
-    Progress::New(caption, " ", steps, [
-	    /* Progress stage 1/2 */
-	    _("Write the settings"),
-	    /* Progress stage 2/2 */
-	    _("Run SuSEconfig")
+    Progress::New( caption, " ", steps, [
+	    // Progress stage
+	    _("Check LXC availability"),
+	    // Progress stage
+	    _("Read system settings"),
 	], [
-	    /* Progress step 1/2 */
-	    _("Writing the settings..."),
-	    /* Progress step 2/2 */
-	    _("Running SuSEconfig..."),
-	    /* Progress finished */
+	    // Progress step
+	    _("Check LXC availability..."),
+	    // Progress step
+	    _("Reading system settings..."),
+	    // Progress finished
 	    _("Finished")
 	],
 	""
     );
 
-    // write settings
-    if(Abort()) return false;
+
     Progress::NextStage();
-    /* Error message */
-    if(false) Report::Error (_("Cannot write settings."));
-    sleep(sl);
 
-    // run SuSEconfig
-    if(Abort()) return false;
-    Progress::NextStage ();
-    /* Error message */
-    if(false) Report::Error (Message::SuSEConfigFailed());
-    sleep(sl);
+    // FIXME run lxc-checkconfig at start
 
-    if(Abort()) return false;
-    /* Progress finished */
     Progress::NextStage();
-    sleep(sl);
 
-    if(Abort()) return false;
+    boolean orig        = Progress::set (false);
+
+    Security::Read ();
+
+    Progress::set (orig);
+
+    map security        = Security::Export ();
+    method              = tolower (security["PASSWD_ENCRYPTION"]:"des");
+
+    textmode            = UI::GetDisplayInfo()["TextMode"]:false;
+
+    Progress::NextStage();
+
     return true;
-}
-
-/**
- * Get all lxc settings from the first parameter
- * (For use by autoinstallation.)
- * @param settings The YCP structure to be imported.
- * @return boolean True on success
- */
-global boolean Import (map settings) {
-    // TODO FIXME: your code here (fill the above mentioned variables)...
-    return true;
-}
-
-/**
- * Dump the lxc settings to a single map
- * (For use by autoinstallation.)
- * @return map Dumped settings (later acceptable by Import ())
- */
-global map Export () {
-    // TODO FIXME: your code here (return the above mentioned variables)...
-    return $[];
-}
-
-/**
- * Create a textual summary and a list of unconfigured cards
- * @return summary of the current configuration
- */
-global list Summary() {
-    // TODO FIXME: your code here...
-    /* Configuration summary text for autoyast */
-    return [ _("Configuration summary..."), [] ];
-}
-
-/**
- * Create an overview table with all configured cards
- * @return table items
- */
-global list Overview() {
-    // TODO FIXME: your code here...
-    return [];
-}
-
-/**
- * Return packages needed to be installed and removed during
- * Autoinstallation to insure module has all needed software
- * installed.
- * @return map with 2 lists.
- */
-global map AutoPackages() {
-    // TODO FIXME: your code here...
-    return $[ "install":[], "remove":[] ];
 }
 
 /* EOF */

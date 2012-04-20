@@ -41,67 +41,16 @@ import "Security";
 import "Wizard";
 
 
-list<term> read_templates () {
-
-  list<term> ret      = [];
-  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2 -d -");
-  if (out["stdout"]:"" != "")
-  {
-    foreach (string line, splitstring (out["stdout"]:"", "\n"), {
-      if (line != "")
-      {
-        ret     = add (ret, `item (line, line == "sles"));
-      }
-    });
-  }
-  return ret;
-}
-
-// encrypt given password using current method
-string crypt_password (string pw, string method) {
-
-    if (method == "md5")
-	return cryptmd5 (pw);
-    if (method == "blowfish")
-	return cryptblowfish (pw);
-    if (method == "sha256")
-	return cryptsha256 (pw);
-    if (method == "sha512")
-	return cryptsha512 (pw);
-    return crypt (pw);
-}
-
-list<string> read_bridges_ids () {
-
-    map out     = (map) SCR::Execute (.target.bash_output, "brctl show | tail -n +2 | cut -f 1");
-    list<string> ret    = [];
-
-    if (out["stdout"]:"" != "")
-    {
-      ret       = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
-    }
-    return ret;
-}
-
 /**
- * Configure1 dialog
+ * Adding new Linux Container
  * @return dialog result
  */
-any LxcDialog () {
+any AddDialog () {
 
-    boolean orig        = Progress::set (false);
-    Security::Read ();
-    Progress::set (orig);
+    // add dialog caption
+    string caption = _("Adding New Container");
 
-    map security        = Security::Export ();
-    string method       = tolower (security["PASSWD_ENCRYPTION"]:"des");
-
-    boolean textmode = UI::GetDisplayInfo()["TextMode"]:false;
-
-    /* Lxc configure1 dialog caption */
-    string caption = _("LXC Configuration");
-
-    list<term> template_items = read_templates ();
+    list<term> template_items = Lxc::ReadTemplates ();
 
     term contents = `HBox (`HSpacing (), `VBox (
       `VSpacing (),
@@ -124,7 +73,7 @@ any LxcDialog () {
             `TextEntry (`id (`subnet), _("Subnet"), "/24"),
             `ReplacePoint (`id (`rp_lan),
               // combo box label
-              `ComboBox (`id (`bridge), _("Bridge"), read_bridges_ids ())
+              `ComboBox (`id (`bridge), _("Bridge"), Lxc::ReadBridgesIds ())
             )
           ),
           `VSpacing (0.5),
@@ -149,39 +98,23 @@ any LxcDialog () {
       `ReplacePoint (`id (`rp_status),
           `Label (`id (`status), "")
       ),
-      `VSpacing (),
-      `HBox (
-          // button label
-          `PushButton (`id (`create), _("Create")),
-          `ReplacePoint (`id (`rpbutton),
-            // button label
-            `PushButton (`id (`start), _("Start"))
-          ),
-          // button label
-          `PushButton (`id (`destroy), _("Destroy"))
-      )
+      `VSpacing ()
     ), `HSpacing ());
 
     string help_text    = "";
 
-    Wizard::CreateDialog();
     Wizard::SetContentsButtons(caption, contents, help_text,
-	    Label::BackButton(), Label::CloseButton());
-    Wizard::HideBackButton ();
-    Wizard::HideAbortButton ();
+      // button label
+      Label::CancelButton(), _("Create"));
 
     UI::ChangeWidget (`id (`ip), `ValidChars, IP::ValidChars4);
-
-    foreach (any b, [ `start, `destroy ], {
-      UI::ChangeWidget (`id (b), `Enabled, false);
-    });
 
     any ret = nil;
     while(true) {
 
 	ret = UI::UserInput();
 
-	if (ret == `abort || ret == `cancel || ret == `next || ret == `back) {
+	if (ret == `abort || ret == `cancel || ret == `back) {
             break;
         }
 
@@ -192,7 +125,7 @@ any LxcDialog () {
             {
               UI::ReplaceWidget (`id (`rp_lan),
                 // combo box label
-                `ComboBox (`id (`bridge), _("Bridge"), read_bridges_ids ())
+                `ComboBox (`id (`bridge), _("Bridge"), Lxc::ReadBridgesIds ())
               );
             }
             continue;
@@ -228,7 +161,7 @@ any LxcDialog () {
             continue;
         }
 
-        if (ret == `create)
+        if (ret == `next)
         {
             // busy message
             Popup::ShowFeedback ("", _("Creating Configuration..."));
@@ -303,7 +236,7 @@ any LxcDialog () {
             // busy message
             Popup::ShowFeedback ("", _("Saving Root Password..."));
 
-            string password     = crypt_password (pw1, method);
+            string password     = Lxc::CryptPassword (pw1);
 
             string file = sformat ("/var/lib/lxc/%1/rootfs/etc/shadow", name);
             if (pw1 != "" && FileUtils::Exists (file))
@@ -316,34 +249,30 @@ any LxcDialog () {
               y2security ("out: %1", out);
             }
             Popup::ClearFeedback ();
-            foreach (any t, [ `create, `name, `ip, `subnet, `bridge, `lan, `template, `pw1, `pw2 ], {
-              UI::ChangeWidget (`id (t), `Enabled, false);
-            });
-            UI::ChangeWidget (`id (`start), `Enabled, true);
-            UI::ChangeWidget (`id (`destroy), `Enabled, true);
-            UI::ReplaceWidget (`id (`rp_status),
-              // status text
-              `Label (`id (`status), sformat (_("Container '%1' was successfully created."), name))
-            );
-            continue;
+            Popup::Message (sformat (_("Container '%1' was successfully created."), name));
+            break;
         }
-        if (ret == `start)
-        {
+    }
+    return ret;
+}
+
+
+void StartContainer (string name)
+{
             string cmd = sformat ("xterm -e lxc-start -n %1", name);
 
-            if (textmode)
+            if (Lxc::textmode)
             {
               cmd       = sformat ("lxc-start -d -n %1", name);
             }
 
-            UI::ReplaceWidget (`id (`rp_status), `Label (`id (`status), ""));
-
             integer id	= (integer) SCR::Execute (.process.start_shell, cmd);
+            /*
             UI::ReplaceWidget (`id (`rpbutton),
               `PushButton (`id (`cancel), Label::CancelButton ())
             );
-            UI::ChangeWidget (`id (`destroy), `Enabled, false);
-            if (textmode)
+            */
+            if (Lxc::textmode)
             {
               // message
               Popup::Message (sformat (_("The Container '%1' was started in the background.
@@ -356,7 +285,8 @@ Use 'lxc-console' command to connect to the running Container."), name));
               {
                   break;
               }
-              if (ui == `cancel)
+// FIXME nothing else could be clicked now, closing YaST probably means killing all bg processes
+              if (ui == `stop)
               {
                   y2internal ("lxc-stop: %1",
                     SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
@@ -364,50 +294,105 @@ Use 'lxc-console' command to connect to the running Container."), name));
                   break;
               }
             }
-            UI::ChangeWidget (`id (`destroy), `Enabled, true);
-            UI::ReplaceWidget (`id (`rpbutton),
-              `PushButton (`id (`start), _("Start"))
-            );
-            continue;
-        }
-        if (ret == `destroy)
-        {
-            UI::ReplaceWidget (`id (`rp_status), `Label (`id (`status), ""));
+}
 
-            // busy message
-            Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
+void StopContainer (string name)
+{
+    y2internal ("lxc-stop: %1",
+      SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
+    );
+}
 
-            string cmd = "lxc-destroy -f -n " + name;
-            map out     = (map) SCR::Execute (.target.bash_output, cmd);
+void DestroyContainer (string name)
+{
+    // busy message
+    Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
 
-            y2internal ("out: %1", out);
+    string cmd = "lxc-destroy -f -n " + name;
+    map out     = (map) SCR::Execute (.target.bash_output, cmd);
 
-            Popup::ClearFeedback ();
+    y2internal ("out: %1", out);
 
-            if (out["exit"]:0 != 0)
-            {
-                // error message
-                Report::Error (sformat (_("Error while destroying:
+    Popup::ClearFeedback ();
+
+    if (out["exit"]:0 != 0)
+    {
+        // error message
+        Report::Error (sformat (_("Error while destroying:
 
 %1"), out["stdout"]:""));
-            }
-            else
-            {
-                foreach (any t, [ `create, `name, `ip, `subnet, `bridge, `lan, `template, `pw1, `pw2 ], {
-                  UI::ChangeWidget (`id (t), `Enabled, true);
-                });
-                UI::ChangeWidget (`id (`start), `Enabled, false);
-                UI::ChangeWidget (`id (`destroy), `Enabled, false);
-            }
+    }
+}
+
+/**
+ * Overview of existing Linux Containers
+ * @return dialog result
+ */
+any OverviewDialog () {
+
+    // LXC overview dialog caption
+    string caption = _("LXC Configuration");
+
+    list<term> lxc_list       = Lxc::GetContainers ();;
+
+    term contents       = `HBox (`HSpacing (), `VBox (
+      `VSpacing (),
+      // Table header
+      `Table (`id (`table), `opt (`notify), `header(_("Name"), _("Status")), lxc_list),
+      `HBox (
+        `PushButton (`id (`add_button), `opt (`key_F3), Label::CreateButton ()),
+        // button label
+        `PushButton (`id (`destroy), `opt (`key_F5), _("&Destroy")),
+        // button label
+        `Right (`PushButton (`id (`start), _("&Start"))),
+        // button label
+        `PushButton (`id (`stop), _("Sto&p"))
+      ),
+      `VSpacing ()
+    ), `HSpacing ());
+
+    Wizard::SetContentsButtons(caption, contents, "overview",
+        Label::BackButton(), Label::FinishButton());
+
+    foreach (any t, [ `table, `destroy, `start ], {
+        UI::ChangeWidget (`id (t), `Enabled, size (lxc_list) > 0);
+    });
+
+    any ret = nil;
+    while(true) {
+
+	ret = UI::UserInput();
+
+	if (ret == `abort || ret == `cancel || ret == `next || ret == `back) {
+            break;
+        }
+
+        if (ret == `add_button) {
+            ret = `add;
+            break;
+        }
+        string selected = (string) UI::QueryWidget (`id (`table), `CurrentItem);
+
+        if (ret == `start) {
+            StartContainer (selected);
+            continue;
+        }
+
+        if (ret == `stop) {
+            StopContainer (selected);
+            continue;
+        }
+
+        if (ret == `destroy) {
+            // FIXME ask for confirmation
+            DestroyContainer (selected);
+            // FIXME adapt the table
             continue;
         }
     }
 
-    UI::CloseDialog();
-
     return ret;
 }
-
 
 /* EOF */
 }

@@ -46,13 +46,14 @@ import "Report";
 import "Summary";
 
 import "CommandLine";
-include "lxc/dialogs.ycp";
+include "lxc/wizards.ycp";
 
 map cmdline_description = $[
     "id"                : "lxc",
     /* Command line help text for the Xlxc module */
     "help"              : _("Configuration of LXC"),
-    "guihandler"        : LxcDialog,
+    "guihandler"        : LxcSequence,
+    "initialize"        : Lxc::Read,
     "actions"           : $[
     ],
     "options"		: $[
