@@ -92,17 +92,20 @@ global list<string> ReadBridgesIds () {
 
 global list<term> GetContainers () {
 
-  list<term> ret      = [];
+  list<term> ret        = [];
+  map lxc_index         = $[];
+
   map out = (map) SCR::Execute (.target.bash_output, "lxc-ls -1");
 
   foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
-    if (line != "")
+    if (line != "" && !haskey (lxc_index, line))
     {
       string cmd= sformat ("lxc-info -n %1 | grep state", line);
       out       = (map) SCR::Execute (.target.bash_output, cmd, $[ "LANG" : "C" ]);
       list<string> state        = splitstring (deletechars (out["stdout"]:"", " \t\n"), ":");
       ret     = add (ret, `item (line, state[1]:""));
       // FIXME translate
+      lxc_index[line]   = true;
     }
   });
   return ret;
