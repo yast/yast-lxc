@@ -109,6 +109,7 @@ any AddDialog () {
         `HSpacing (0.5),
         // text entry
         `Left (`TextEntry (`id (`name), _("Name"))),
+        `HSpacing (),
         // combo box label
         `ComboBox (`id (`template), _("Template"), template_items)
       )),
@@ -119,8 +120,10 @@ any AddDialog () {
           `HBox (
             // text entry label
             `TextEntry (`id (`ip), _("IP Address")),
+            `HSpacing (),
             // text entry label
             `TextEntry (`id (`subnet), _("Subnet"), "/24"),
+            `HSpacing (),
             `ReplacePoint (`id (`rp_lan),
               // combo box label
               `ComboBox (`id (`bridge), _("Bridge"), Lxc::ReadBridgesIds ())
@@ -170,14 +173,11 @@ any AddDialog () {
 
         if (ret == `lan)
         {
-            any lan_ret = WFM::CallFunction ("lan");
-            if (lan_ret == `next || lan_ret == `finish)
-            {
-              UI::ReplaceWidget (`id (`rp_lan),
+            WFM::CallFunction ("lan");
+            UI::ReplaceWidget (`id (`rp_lan),
                 // combo box label
                 `ComboBox (`id (`bridge), _("Bridge"), Lxc::ReadBridgesIds ())
-              );
-            }
+            );
             continue;
         }
 
