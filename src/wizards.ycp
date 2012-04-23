@@ -102,7 +102,6 @@ any LxcSequence() {
 
     Wizard::CreateDialog();
     Wizard::HideAbortButton ();
-    Wizard::SetDesktopTitleAndIcon("lxc");
 
     any ret = Sequencer::Run(aliases, sequence);
 

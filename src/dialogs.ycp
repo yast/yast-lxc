@@ -362,6 +362,7 @@ any OverviewDialog () {
         foreach (any t, [ `table, `destroy, `start, `stop ], {
           UI::ChangeWidget (`id (t), `Enabled, size (lxc_list) > 0);
         });
+      // FIXME allow Connect only for running
     }
 
     term contents       = `HBox (`HSpacing (), `VBox (
@@ -415,6 +416,7 @@ any OverviewDialog () {
 
         if (ret == `connect) {
             // FIXME solve more consoles running
+            // FIXME check if console was closed from outside
             console_pid = Connect (selected);
             UI::ReplaceWidget (`id (`rp_console),
               // button label
