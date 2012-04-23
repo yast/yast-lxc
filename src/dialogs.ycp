@@ -40,6 +40,9 @@ import "Report";
 import "Security";
 import "Wizard";
 
+// PIDs of running consoles (indexed by lxc names)
+map<string,integer> console_pids = $[];
+
 
 boolean CreateContainerConfig (string name, string ip, string subnet, string bridge, string template)
 {
@@ -92,7 +95,7 @@ boolean CreateContainerConfig (string name, string ip, string subnet, string bri
 }
 
 /**
- * Adding new Linux Container
+ * Dialog for adding new Linux Container
  * @return dialog result
  */
 any AddDialog () {
@@ -163,7 +166,7 @@ any AddDialog () {
     UI::ChangeWidget (`id (`ip), `ValidChars, IP::ValidChars4);
 
     any ret = nil;
-    while(true) {
+    while (true) {
 
 	ret = UI::UserInput();
 
@@ -291,34 +294,57 @@ remove it and use the data you have just entered?
 }
 
 
-void StartContainer (string name)
+/**
+ * Start selected container
+ */
+boolean StartContainer (string name)
 {
-        // start container as a deamon, so it survives YaST's exit
-        string cmd = sformat ("lxc-start -d -n %1", name);
+    // start container as a deamon, so it survives YaST's exit
+    string cmd = sformat ("lxc-start -d -n %1", name);
 
-        map out = (map) SCR::Execute (.target.bash_output, cmd);
-        // FIXME check exit
-        if (Lxc::textmode)
-        {
-          // message
-          Popup::Message (sformat (_("The Container '%1' was started in the background.
+    map out = (map) SCR::Execute (.target.bash_output, cmd);
+
+    if (out["exit"]:0 != 0)
+    {
+        Report::Error (sformat (_("Error while starting container:
+
+%1"), out["stdout"]:"" + out["stderr"]:""));
+        return false;
+    }
+    if (Lxc::textmode)
+    {
+        // message, %1 is a name
+        Popup::Message (sformat (_("The Container '%1' was started in the background.
 Use 'lxc-console' command to connect to the running Container."), name));
-        }
+    }
+    return true;
 }
 
+/**
+ * Stop given container
+ */
 void StopContainer (string name)
 {
     y2internal ("lxc-stop: %1",
       SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
     );
+    if (console_pids[name]:nil != nil)
+    {
+      // close the console if stopping
+      SCR::Execute (.process.kill, console_pids[name]:nil, 15);
+    }
 }
 
+/**
+ * Delete given container
+ */
 void DestroyContainer (string name)
 {
     // busy message
     Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
 
-    string cmd = "lxc-destroy -f -n " + name;
+    string cmd = "lxc-destroy -n " + name;
+//    string cmd = "lxc-destroy -f -n " + name;
     map out     = (map) SCR::Execute (.target.bash_output, cmd);
 
     y2internal ("out: %1", out);
@@ -334,7 +360,10 @@ void DestroyContainer (string name)
     }
 }
 
-// Launch console for selected container
+/**
+ * Launch console for selected container
+ * Return PID of console process
+ */
 integer Connect (string name)
 {
     string cmd = sformat ("xterm -e lxc-console -n %1", name);
@@ -352,23 +381,73 @@ any OverviewDialog () {
 
     // LXC overview dialog caption
     string caption = _("LXC Configuration");
-    integer console_pid = -1;
-    list<term> lxc_list = [];
 
+    // current container
+    string selected     = "";
+
+    // update status of the buttons according to current item
+    void update_buttons (string selected) {
+
+        if (selected == nil || selected == "")
+        {
+          return;
+        }
+
+        term line = (term) UI::QueryWidget (`id (`table), `Item (selected));
+        boolean running     = line[2]:"" == "RUNNING"; // TODO do some better test
+        UI::ChangeWidget (`id (`start), `Enabled, !running);
+        UI::ChangeWidget (`id (`stop), `Enabled, running);
+        if (Lxc::textmode)
+        {
+          return;
+        }
+        if (console_pids[selected]:nil == nil)
+        {
+            UI::ReplaceWidget (`id (`rp_console),
+              // button label
+              `PushButton (`id (`connect), _("Connect"))
+            );
+            UI::ChangeWidget (`id (`connect), `Enabled, running);
+        }
+        else
+        {
+            UI::ReplaceWidget (`id (`rp_console),
+              // button label
+              `PushButton (`id (`disconnect), _("Disconnect"))
+            );
+        }
+    }
+
+    // update table with fresh items
     void update_table () {
 
-        lxc_list       = Lxc::GetContainers ();;
+        list<term> lxc_list     = Lxc::GetContainers ();;
+
         UI::ChangeWidget (`id (`table), `Items, lxc_list);
-        foreach (any t, [ `table, `destroy, `start, `stop ], {
-          UI::ChangeWidget (`id (t), `Enabled, size (lxc_list) > 0);
-        });
-      // FIXME allow Connect only for running
+        if (size (lxc_list) == 0)
+        {
+          foreach (any t, [ `table, `destroy, `start, `stop, `connect ], {
+            UI::ChangeWidget (`id (t), `Enabled, false);
+          });
+        }
+        else
+        {
+          UI::SetFocus (`id (`table));
+          if (selected != "")
+          {
+              UI::ChangeWidget (`id (`table), `CurrentItem, selected);
+          }
+          selected = (string) UI::QueryWidget (`id (`table), `CurrentItem);
+          update_buttons (selected);
+        }
     }
 
     term contents       = `HBox (`HSpacing (), `VBox (
       `VSpacing (),
+      // button label
+      `Right (`PushButton (`id (`refresh), _("Refresh"))),
       // Table header
-      `Table (`id (`table), `opt (`notify), `header(_("Name"), _("Status")), lxc_list),
+      `Table (`id (`table), `opt (`notify, `immediate), `header(_("Name"), _("Status")), []),
       `HBox (
         `PushButton (`id (`add_button), `opt (`key_F3), Label::CreateButton ()),
         // button label
@@ -386,17 +465,25 @@ any OverviewDialog () {
       `VSpacing ()
     ), `HSpacing ());
 
-    // FIXME add Refresh Table button
-
     Wizard::SetContentsButtons(caption, contents, "overview",
         Label::BackButton(), Label::FinishButton());
 
     update_table ();
 
     any ret = nil;
-    while(true) {
 
-	ret = UI::UserInput();
+    while (true) {
+
+        // polling only if there's some process to watch
+        if (size (console_pids) > 0)
+        {
+            sleep (100);
+	    ret = UI::PollInput();
+        }
+        else
+        {
+	    ret = UI::UserInput();
+        }
 
 	if (ret == `abort || ret == `cancel || ret == `next || ret == `back) {
             break;
@@ -406,47 +493,52 @@ any OverviewDialog () {
             ret = `add;
             break;
         }
-        string selected = (string) UI::QueryWidget (`id (`table), `CurrentItem);
+        selected = (string) UI::QueryWidget (`id (`table), `CurrentItem);
+        integer console_pid     = console_pids[selected]:nil;
+
+        // check the status of console process
+        if (console_pid != nil && SCR::Read (.process.running, console_pid) != true) {
+            y2milestone ("console process is dead");
+            console_pids        = remove (console_pids, selected);
+            update_buttons (selected);
+            continue;
+        }
+
+        if (ret == `table) {
+            update_buttons (selected);
+        }
+
+        if (ret == `refresh) {
+            update_table ();
+        }
 
         if (ret == `start) {
             StartContainer (selected);
             update_table ();
-            continue;
         }
 
-        if (ret == `connect) {
-            // FIXME solve more consoles running
-            // FIXME check if console was closed from outside
-            console_pid = Connect (selected);
-            UI::ReplaceWidget (`id (`rp_console),
-              // button label
-              `PushButton (`id (`disconnect), _("Disconnect"))
-            );
-            continue;
+        if (ret == `connect && console_pid == nil) {
+            console_pids[selected] = Connect (selected);
+            update_buttons (selected);
         }
 
-        if (ret == `disconnect && console_pid != -1) {
+        if (ret == `disconnect && console_pid != nil) {
+            y2milestone ("killing console proces with PID %1...", console_pid);
             SCR::Execute (.process.kill, console_pid, 15);
             // FIXME timeout + kill -9
-            console_pid     = -1;
-            UI::ReplaceWidget (`id (`rp_console),
-              // button label
-              `PushButton (`id (`connect), _("Connect"))
-            );
-            continue;
+            console_pids        = remove (console_pids, selected);
+            update_buttons (selected);
         }
 
         if (ret == `stop) {
             StopContainer (selected);
             update_table ();
-            continue;
         }
 
-        if (ret == `destroy) {
-            // FIXME ask for confirmation
+        if (ret == `destroy && Popup::YesNo (sformat (_("Are you sure to delete container '%1'?"), selected))) {
+            StopContainer (selected);
             DestroyContainer (selected);
             update_table ();
-            continue;
         }
     }
 

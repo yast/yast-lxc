@@ -1,4 +1,15 @@
 -------------------------------------------------------------------
+Mon Apr 23 16:42:59 CEST 2012 - jsuchome@suse.cz
+
+- handle more consoles running
+- check console processes state
+- properly handle buttons enablement 
+- report error on start failure
+- stop container before deleting
+- enable manual refreshing of the table
+- 2.17.3
+
+-------------------------------------------------------------------
 Mon Apr 23 11:54:12 CEST 2012 - jsuchome@suse.cz
 
 - show list of containers
