@@ -46,51 +46,50 @@ map<string,integer> console_pids = $[];
 
 boolean CreateContainerConfig (string name, string ip, string subnet, string bridge, string template)
 {
-            // busy message
-            Popup::ShowFeedback ("", _("Creating Configuration..."));
+    // busy message
+    Popup::ShowFeedback ("", _("Creating Configuration..."));
 
-            // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
-            string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
-            if (ip != "")
-            {
-                cmd     = cmd + " -i " + ip;
-                if (subnet != "")
-                {
-                  if (substring (subnet, 0, 1) != "/")
-                  {
-                    cmd = cmd + "/";
-                  }
-                  cmd   = cmd + subnet;
-                }
-            }
+    // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
+    string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
+    if (ip != "")
+    {
+        cmd     = cmd + " -i " + ip;
+        if (subnet != "")
+        {
+          if (substring (subnet, 0, 1) != "/")
+          {
+            cmd = cmd + "/";
+          }
+          cmd   = cmd + subnet;
+        }
+    }
 
-            if (bridge != "")
-            {
-                cmd     = cmd + " -b " + bridge;
-            }
+    if (bridge != "")
+    {
+        cmd     = cmd + " -b " + bridge;
+    }
 
-            if (template != "")
-            {
-                cmd     = cmd + " -t " + template;
-            }
+    if (template != "")
+    {
+        cmd     = cmd + " -t " + template;
+    }
 
-            y2internal ("cmd: %1", cmd);
+    y2internal ("cmd: %1", cmd);
 
-            map out     = (map) SCR::Execute (.target.bash_output, cmd);
+    map out     = (map) SCR::Execute (.target.bash_output, cmd);
 
-            y2internal ("out: %1", out);
+    y2internal ("out: %1", out);
 
-            Popup::ClearFeedback ();
+    Popup::ClearFeedback ();
 
-            if (out["exit"]:0 != 0)
-            {
-                // error message
-                Report::Error (sformat (_("Error occured during configuration:
+    if (out["exit"]:0 != 0)
+    {
+        // error message
+        Report::Error (sformat (_("Error occured during configuration:
 
 %1"), out["stdout"]:""));
-                return false;
-            }
-
+        return false;
+    }
     return true;
 }
 
