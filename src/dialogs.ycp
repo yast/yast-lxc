@@ -293,41 +293,17 @@ remove it and use the data you have just entered?
 
 void StartContainer (string name)
 {
-            string cmd = sformat ("xterm -e lxc-start -n %1", name);
+        // start container as a deamon, so it survives YaST's exit
+        string cmd = sformat ("lxc-start -d -n %1", name);
 
-            if (Lxc::textmode)
-            {
-              cmd       = sformat ("lxc-start -d -n %1", name);
-            }
-
-            integer id	= (integer) SCR::Execute (.process.start_shell, cmd);
-            /*
-            UI::ReplaceWidget (`id (`rpbutton),
-              `PushButton (`id (`cancel), Label::CancelButton ())
-            );
-            */
-            if (Lxc::textmode)
-            {
-              // message
-              Popup::Message (sformat (_("The Container '%1' was started in the background.
+        map out = (map) SCR::Execute (.target.bash_output, cmd);
+        // FIXME check exit
+        if (Lxc::textmode)
+        {
+          // message
+          Popup::Message (sformat (_("The Container '%1' was started in the background.
 Use 'lxc-console' command to connect to the running Container."), name));
-            }
-            while (true)
-            {
-	      symbol ui = (symbol) UI::PollInput();
-	      if (SCR::Read(.process.running, id) != true)
-              {
-                  break;
-              }
-// FIXME nothing else could be clicked now, closing YaST probably means killing all bg processes
-              if (ui == `stop)
-              {
-                  y2internal ("lxc-stop: %1",
-                    SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
-                  );
-                  break;
-              }
-            }
+        }
 }
 
 void StopContainer (string name)
@@ -358,6 +334,16 @@ void DestroyContainer (string name)
     }
 }
 
+// Launch console for selected container
+integer Connect (string name)
+{
+    string cmd = sformat ("xterm -e lxc-console -n %1", name);
+
+    integer pid	= (integer) SCR::Execute (.process.start_shell, cmd);
+
+    return pid;
+}
+
 /**
  * Overview of existing Linux Containers
  * @return dialog result
@@ -366,8 +352,17 @@ any OverviewDialog () {
 
     // LXC overview dialog caption
     string caption = _("LXC Configuration");
+    integer console_pid = -1;
+    list<term> lxc_list = [];
 
-    list<term> lxc_list       = Lxc::GetContainers ();;
+    void update_table () {
+
+        lxc_list       = Lxc::GetContainers ();;
+        UI::ChangeWidget (`id (`table), `Items, lxc_list);
+        foreach (any t, [ `table, `destroy, `start, `stop ], {
+          UI::ChangeWidget (`id (t), `Enabled, size (lxc_list) > 0);
+        });
+    }
 
     term contents       = `HBox (`HSpacing (), `VBox (
       `VSpacing (),
@@ -380,17 +375,22 @@ any OverviewDialog () {
         // button label
         `Right (`PushButton (`id (`start), _("&Start"))),
         // button label
-        `PushButton (`id (`stop), _("Sto&p"))
+        `PushButton (`id (`stop), _("Sto&p")),
+        `ReplacePoint (`id (`rp_console),
+          Lxc::textmode ? `HBox () :
+          // button label
+          `PushButton (`id (`connect), _("Connect"))
+        )
       ),
       `VSpacing ()
     ), `HSpacing ());
 
+    // FIXME add Refresh Table button
+
     Wizard::SetContentsButtons(caption, contents, "overview",
         Label::BackButton(), Label::FinishButton());
 
-    foreach (any t, [ `table, `destroy, `start ], {
-        UI::ChangeWidget (`id (t), `Enabled, size (lxc_list) > 0);
-    });
+    update_table ();
 
     any ret = nil;
     while(true) {
@@ -409,18 +409,41 @@ any OverviewDialog () {
 
         if (ret == `start) {
             StartContainer (selected);
+            update_table ();
+            continue;
+        }
+
+        if (ret == `connect) {
+            // FIXME solve more consoles running
+            console_pid = Connect (selected);
+            UI::ReplaceWidget (`id (`rp_console),
+              // button label
+              `PushButton (`id (`disconnect), _("Disconnect"))
+            );
+            continue;
+        }
+
+        if (ret == `disconnect && console_pid != -1) {
+            SCR::Execute (.process.kill, console_pid, 15);
+            // FIXME timeout + kill -9
+            console_pid     = -1;
+            UI::ReplaceWidget (`id (`rp_console),
+              // button label
+              `PushButton (`id (`connect), _("Connect"))
+            );
             continue;
         }
 
         if (ret == `stop) {
             StopContainer (selected);
+            update_table ();
             continue;
         }
 
         if (ret == `destroy) {
             // FIXME ask for confirmation
             DestroyContainer (selected);
-            // FIXME adapt the table
+            update_table ();
             continue;
         }
     }
