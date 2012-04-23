@@ -94,14 +94,15 @@ global list<term> GetContainers () {
 
   list<term> ret      = [];
   map out = (map) SCR::Execute (.target.bash_output, "lxc-ls -1");
-out["stdout"]   = "suse1\nsles\n";
+
   foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
     if (line != "")
     {
       string cmd= sformat ("lxc-info -n %1 | grep state", line);
       out       = (map) SCR::Execute (.target.bash_output, cmd, $[ "LANG" : "C" ]);
-      // FIXME read status
-      ret     = add (ret, `item (line, _("Stopped")));
+      list<string> state        = splitstring (deletechars (out["stdout"]:"", " \t\n"), ":");
+      ret     = add (ret, `item (line, state[1]:""));
+      // FIXME translate
     }
   });
   return ret;
