@@ -41,6 +41,56 @@ import "Security";
 import "Wizard";
 
 
+boolean CreateContainerConfig (string name, string ip, string subnet, string bridge, string template)
+{
+            // busy message
+            Popup::ShowFeedback ("", _("Creating Configuration..."));
+
+            // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
+            string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
+            if (ip != "")
+            {
+                cmd     = cmd + " -i " + ip;
+                if (subnet != "")
+                {
+                  if (substring (subnet, 0, 1) != "/")
+                  {
+                    cmd = cmd + "/";
+                  }
+                  cmd   = cmd + subnet;
+                }
+            }
+
+            if (bridge != "")
+            {
+                cmd     = cmd + " -b " + bridge;
+            }
+
+            if (template != "")
+            {
+                cmd     = cmd + " -t " + template;
+            }
+
+            y2internal ("cmd: %1", cmd);
+
+            map out     = (map) SCR::Execute (.target.bash_output, cmd);
+
+            y2internal ("out: %1", out);
+
+            Popup::ClearFeedback ();
+
+            if (out["exit"]:0 != 0)
+            {
+                // error message
+                Report::Error (sformat (_("Error occured during configuration:
+
+%1"), out["stdout"]:""));
+                return false;
+            }
+
+    return true;
+}
+
 /**
  * Adding new Linux Container
  * @return dialog result
@@ -163,48 +213,32 @@ any AddDialog () {
 
         if (ret == `next)
         {
-            // busy message
-            Popup::ShowFeedback ("", _("Creating Configuration..."));
+            string config_file          = sformat ("/root/%1.config", name);
+            boolean create_config       = true;
 
-            // lxc-createconfig -n <name> [-i <ipaddr/cidr>] [-b <bridge>] [-t <template]
-            string cmd  = sformat ("echo 'y' | lxc-createconfig -n %1", name);
-            if (ip != "")
+            if (FileUtils::Exists (config_file))
             {
-                cmd     = cmd + " -i " + ip;
-                if (subnet != "")
+                if (!Popup::AnyQuestion (Popup::NoHeadline(),
+                // yes/no popup
+_("Configuration with the same name already exist.
+
+Do you want to use existing configuration or
+remove it and use the data you have just entered?
+"),
+                // button label
+                _("Use Existing Configuration"), _("Replace With New"), `focus_yes))
                 {
-                  if (substring (subnet, 0, 1) != "/")
-                  {
-                    cmd = cmd + "/";
-                  }
-                  cmd   = cmd + subnet;
+                    SCR::Execute (.target.remove, config_file);
+                }
+                else
+                {
+                    create_config       = false;
                 }
             }
 
-            if (bridge != "")
+            if (create_config &&
+                CreateContainerConfig (name, ip, subnet, bridge, template) == false)
             {
-                cmd     = cmd + " -b " + bridge;
-            }
-
-            if (template != "")
-            {
-                cmd     = cmd + " -t " + template;
-            }
-
-            y2internal ("cmd: %1", cmd);
-
-            map out     = (map) SCR::Execute (.target.bash_output, cmd);
-
-            y2internal ("out: %1", out);
-
-            Popup::ClearFeedback ();
-
-            if (out["exit"]:0 != 0)
-            {
-                // error message
-                Report::Error (sformat (_("Error occured during configuration:
-
-%1"), out["stdout"]:""));
                 continue;
             }
 
@@ -212,14 +246,14 @@ any AddDialog () {
             Popup::ShowFeedback ("", sformat (_("Creating Container %1..."), name));
 
             // lxc-create -n <name> -f /root/<name>.config -t <template>
-            cmd = sformat ("lxc-create -n %1 -f /root/%1.config", name);
+            string cmd = sformat ("lxc-create -n %1 -f /root/%1.config", name);
             if (template != "")
             {
                 cmd     = cmd + " -t " + template;
             }
             y2internal ("cmd: %1", cmd);
 
-            out     = (map) SCR::Execute (.target.bash_output, cmd);
+            map out     = (map) SCR::Execute (.target.bash_output, cmd);
 
             y2internal ("out: %1", out);
 
