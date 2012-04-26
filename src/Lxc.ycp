@@ -35,6 +35,7 @@
 module "Lxc";
 textdomain "lxc";
 
+import "Directory";
 import "Progress";
 import "Security";
 
@@ -112,6 +113,81 @@ global list<term> GetContainers () {
 }
 
 /**
+ * Check if LXC is correctly configured
+ */
+boolean CheckLXCConfiguration () {
+
+    boolean problem     = false;
+    // zgrep does not seem to work with .target.bash_output -> grep uncompressed config FIXME
+    string tmpdir       = Directory::tmpdir;
+    SCR::Execute (.target.bash_output, sformat (
+      "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
+
+    map out = (map) SCR::Execute (.target.bash_output, sformat (
+      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+
+    list<string> rt     = [];
+    map<string,string> colors   = $[
+      "blue"    : "\033[1;32m",
+      "red"     : "\033[1;31m",
+      "yellow"  : "\033[1;33m"
+    ];
+    foreach (string line, splitstring (out["stdout"]:"", "\n"), {
+      boolean colored   = false;
+      foreach (string name, string color, colors, {
+        if (colored)
+        {
+          break;
+        }
+        integer found   = find (line, color);
+        if (found != nil && found > 0)
+        {
+          line =        sformat ("%1<font color=%2>%3</font>",
+              substring (line, 0, found),
+              name,
+              substring (line, found + size (color))
+          );
+          colored       = true;
+          if (name == "red" || name == "yellow")
+            problem     = true;
+        }
+      });
+      // 'normalizing' color
+      integer found   = find (line, "\033[0;39m");
+      if (found != nil && found >= 0)
+      {
+          line = substring (line, 0, found) +
+            substring (line, found + size ( "\033[0;39m"));
+      }
+      rt      = add (rt, line);
+    });
+
+    if (!problem)
+    {
+      return true;
+    }
+
+    UI::OpenDialog (`opt(`decorated), `HBox(`HSpacing(1.5),
+      `VSpacing (30),
+      `VBox (
+        `HSpacing(85),
+	`VSpacing(0.5),
+        // info label (try to keep the text short)
+        `Label (_("Some problems with LXC configuration were found. Check the documentation for details.")),
+	`VSpacing(0.5),
+        // output follows in widget below
+        `Left (`Label (_("Output of 'lxc-checkconfig' script:"))),
+        `RichText (`id (`rt), mergestring (rt, "<br>")),
+        `PushButton ("OK")
+    )));
+
+    UI::UserInput ();
+    UI::CloseDialog ();
+
+    return false;
+}
+
+/**
  * Read all lxc settings
  * @return true on success
  */
@@ -142,7 +218,7 @@ global boolean Read() {
 
     Progress::NextStage();
 
-    // FIXME run lxc-checkconfig at start
+    CheckLXCConfiguration ();
 
     Progress::NextStage();
 
