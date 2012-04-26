@@ -6,6 +6,7 @@ client_DATA =			\
 	lxc.ycp
 
 ynclude_DATA =			\
+        helps.ycp               \
         wizards.ycp             \
 	dialogs.ycp
 

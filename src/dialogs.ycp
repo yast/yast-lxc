@@ -40,6 +40,8 @@ import "Report";
 import "Security";
 import "Wizard";
 
+include "lxc/helps.ycp";
+
 // PIDs of running consoles (indexed by lxc names)
 map<string,integer> console_pids = $[];
 
@@ -156,9 +158,7 @@ any AddDialog () {
       `VSpacing ()
     ), `HSpacing ());
 
-    string help_text    = "";
-
-    Wizard::SetContentsButtons(caption, contents, help_text,
+    Wizard::SetContentsButtons(caption, contents, HELPS["create"]:"",
       // button label
       Label::CancelButton(), _("Create"));
 
@@ -464,7 +464,7 @@ any OverviewDialog () {
       `VSpacing ()
     ), `HSpacing ());
 
-    Wizard::SetContentsButtons(caption, contents, "overview",
+    Wizard::SetContentsButtons(caption, contents, HELPS["overview"]:"",
         Label::BackButton(), Label::FinishButton());
 
     update_table ();

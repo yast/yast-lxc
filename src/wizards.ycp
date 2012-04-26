@@ -43,6 +43,7 @@ include "lxc/dialogs.ycp";
  * @return `abort if aborted and `next otherwise
  */
 symbol ReadDialog() {
+    Wizard::RestoreHelp(HELPS["read"]:"");
     if (!Confirm::MustBeRoot()) return `abort;
     boolean ret = Lxc::Read();
     return ret ? `next : `abort;
