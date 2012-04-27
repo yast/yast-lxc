@@ -1,0 +1,29 @@
+@HEADER-COMMENT@
+
+@HEADER@
+Requires:	yast2 yast2-security lxc
+BuildRequires:	perl-XML-Writer update-desktop-files yast2 yast2-devtools yast2-testsuite yast2-security
+
+BuildArchitectures:	noarch
+
+Summary:	Management tool for Linux Containers (LXC)
+
+%description
+-
+
+@PREP@
+
+@BUILD@
+
+@INSTALL@
+
+@CLEAN@
+
+%files
+%defattr(-,root,root)
+%dir @yncludedir@/lxc
+@yncludedir@/lxc/*
+@clientdir@/lxc.ycp
+@moduledir@/Lxc.*
+@desktopdir@/lxc.desktop
+%doc @docdir@

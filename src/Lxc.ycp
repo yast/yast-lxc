@@ -1,0 +1,253 @@
+/* ------------------------------------------------------------------------------
+ * Copyright (c) 2012 Novell, Inc. All Rights Reserved.
+ *
+ *
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of version 2 of the GNU General Public License as published by the
+ * Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along with
+ * this program; if not, contact Novell, Inc.
+ *
+ * To contact Novell about this file by physical or electronic mail, you may find
+ * current contact information at www.novell.com.
+ * ------------------------------------------------------------------------------
+ */
+
+/**
+ * File:	modules/Lxc.ycp
+ * Package:	Configuration of lxc
+ * Summary:	Lxc settings, input and output functions
+ * Authors:	Jiri Suchomel <jsuchome@suse.cz>
+ *
+ * $Id$
+ *
+ * Representation of the configuration of lxc.
+ * Input and output routines.
+ */
+
+{
+
+module "Lxc";
+textdomain "lxc";
+
+import "Directory";
+import "Progress";
+import "Security";
+
+
+// text or graphic mode?
+global boolean textmode        = false;
+
+// current password encryption method
+string method           = "des";
+
+// read list of available templates
+global list<term> ReadTemplates () {
+
+  list<term> ret      = [];
+  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2 -d -");
+  if (out["stdout"]:"" != "")
+  {
+    foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
+      if (line != "")
+      {
+        ret     = add (ret,
+          // sles goes later = selected if present
+          `item (line, line == "sles" || line == "opensuse"));
+      }
+    });
+  }
+  return ret;
+}
+
+// encrypt given password using current method
+global string CryptPassword (string pw) {
+
+    if (method == "md5")
+	return cryptmd5 (pw);
+    if (method == "blowfish")
+	return cryptblowfish (pw);
+    if (method == "sha256")
+	return cryptsha256 (pw);
+    if (method == "sha512")
+	return cryptsha512 (pw);
+    return crypt (pw);
+}
+
+global list<string> ReadBridgesIds () {
+
+    map out     = (map) SCR::Execute (.target.bash_output, "brctl show | tail -n +2 | cut -f 1");
+    list<string> ret    = [];
+
+    if (out["stdout"]:"" != "")
+    {
+      ret       = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
+    }
+    return ret;
+}
+
+global list<term> GetContainers () {
+
+  list<term> ret        = [];
+  map lxc_index         = $[];
+
+  map out = (map) SCR::Execute (.target.bash_output, "lxc-ls -1");
+
+  foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
+    if (line != "" && !haskey (lxc_index, line))
+    {
+      string cmd= sformat ("lxc-info -n %1 | grep state", line);
+      out       = (map) SCR::Execute (.target.bash_output, cmd, $[ "LANG" : "C" ]);
+      list<string> state        = splitstring (deletechars (out["stdout"]:"", " \t\n"), ":");
+      ret     = add (ret, `item (line, state[1]:""));
+      // FIXME translate
+      lxc_index[line]   = true;
+    }
+  });
+  return ret;
+}
+
+/**
+ * Check if LXC is correctly configured
+ */
+boolean CheckLXCConfiguration () {
+
+    boolean problem     = false;
+    // zgrep does not seem to work with .target.bash_output -> grep uncompressed config FIXME
+    string tmpdir       = Directory::tmpdir;
+    SCR::Execute (.target.bash_output, sformat (
+      "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
+
+    map out = (map) SCR::Execute (.target.bash_output, sformat (
+//      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+      "GREP=grep /usr/bin/lxc-checkconfig"));
+
+    list<string> rt     = [];
+    map<string,string> colors   = $[
+      "blue"    : "\033[1;32m",
+      "red"     : "\033[1;31m",
+      "yellow"  : "\033[1;33m"
+    ];
+    foreach (string line, splitstring (out["stdout"]:"", "\n"), {
+      boolean colored   = false;
+      foreach (string name, string color, colors, {
+        if (colored)
+        {
+          break;
+        }
+        integer found   = find (line, color);
+        if (found != nil && found > 0)
+        {
+          if (textmode)
+          {
+            line =        sformat ("%1<i>%2</i>",
+              substring (line, 0, found),
+              substring (line, found + size (color))
+            );
+          }
+          else
+          {
+            line =        sformat ("%1<font color=%2>%3</font>",
+              substring (line, 0, found),
+              name,
+              substring (line, found + size (color))
+            );
+          }
+          colored       = true;
+          if (name == "red" || name == "yellow")
+            problem     = true;
+        }
+      });
+      // 'normalizing' color
+      integer found   = find (line, "\033[0;39m");
+      if (found != nil && found >= 0)
+      {
+          line = substring (line, 0, found) +
+            substring (line, found + size ( "\033[0;39m"));
+      }
+      rt      = add (rt, line);
+    });
+
+    if (!problem)
+    {
+      return true;
+    }
+
+    UI::OpenDialog (`opt(`decorated), `HBox(`HSpacing(1.5),
+      `VSpacing (30),
+      `VBox (
+        `HSpacing(85),
+	`VSpacing(0.5),
+        // info label (try to keep the text short)
+        `Label (_("Some problems with LXC configuration were found. Check the documentation for details.")),
+	`VSpacing(0.5),
+        // output follows in widget below
+        `Left (`Label (_("Output of 'lxc-checkconfig' script:"))),
+        `RichText (`id (`rt), mergestring (rt, "<br>")),
+        `PushButton ("OK")
+    )));
+
+    UI::UserInput ();
+    UI::CloseDialog ();
+
+    return false;
+}
+
+/**
+ * Read all lxc settings
+ * @return true on success
+ */
+global boolean Read() {
+
+    /* Lxc read dialog caption */
+    string caption = _("Initializing LXC Configuration");
+
+    integer steps = 2;
+
+    // We do not set help text here, because it was set outside
+    Progress::New( caption, " ", steps, [
+	    // Progress stage
+	    _("Check LXC availability"),
+	    // Progress stage
+	    _("Read system settings"),
+	], [
+	    // Progress step
+	    _("Check LXC availability..."),
+	    // Progress step
+	    _("Reading system settings..."),
+	    // Progress finished
+	    _("Finished")
+	],
+	""
+    );
+
+
+    Progress::NextStage();
+
+    textmode            = UI::GetDisplayInfo()["TextMode"]:false;
+
+    CheckLXCConfiguration ();
+
+    Progress::NextStage();
+
+    boolean orig        = Progress::set (false);
+
+    Security::Read ();
+
+    Progress::set (orig);
+
+    map security        = Security::Export ();
+    method              = tolower (security["PASSWD_ENCRYPTION"]:"des");
+
+    Progress::NextStage();
+
+    return true;
+}
+
+/* EOF */
+}
