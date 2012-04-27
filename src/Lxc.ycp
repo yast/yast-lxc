@@ -124,7 +124,8 @@ boolean CheckLXCConfiguration () {
       "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
 
     map out = (map) SCR::Execute (.target.bash_output, sformat (
-      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+//      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+      "GREP=grep /usr/bin/lxc-checkconfig"));
 
     list<string> rt     = [];
     map<string,string> colors   = $[
@@ -142,11 +143,21 @@ boolean CheckLXCConfiguration () {
         integer found   = find (line, color);
         if (found != nil && found > 0)
         {
-          line =        sformat ("%1<font color=%2>%3</font>",
+          if (textmode)
+          {
+            line =        sformat ("%1<i>%2</i>",
+              substring (line, 0, found),
+              substring (line, found + size (color))
+            );
+          }
+          else
+          {
+            line =        sformat ("%1<font color=%2>%3</font>",
               substring (line, 0, found),
               name,
               substring (line, found + size (color))
-          );
+            );
+          }
           colored       = true;
           if (name == "red" || name == "yellow")
             problem     = true;
@@ -218,6 +229,8 @@ global boolean Read() {
 
     Progress::NextStage();
 
+    textmode            = UI::GetDisplayInfo()["TextMode"]:false;
+
     CheckLXCConfiguration ();
 
     Progress::NextStage();
@@ -230,8 +243,6 @@ global boolean Read() {
 
     map security        = Security::Export ();
     method              = tolower (security["PASSWD_ENCRYPTION"]:"des");
-
-    textmode            = UI::GetDisplayInfo()["TextMode"]:false;
 
     Progress::NextStage();
 

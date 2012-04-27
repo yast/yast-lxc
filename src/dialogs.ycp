@@ -123,7 +123,7 @@ any AddDialog () {
         `HSpacing (0.5), `VBox (
           `HBox (
             // text entry label
-            `TextEntry (`id (`ip), _("IP Address")),
+            `TextEntry (`id (`ip), _("IP Address"), "0.0.0.0"),
             `HSpacing (),
             // text entry label
             `TextEntry (`id (`subnet), _("Subnet"), "/24"),
