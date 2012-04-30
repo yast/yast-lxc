@@ -102,6 +102,7 @@ any LxcSequence() {
     ];
 
     Wizard::CreateDialog();
+    Wizard::HideBackButton ();
     Wizard::HideAbortButton ();
 
     any ret = Sequencer::Run(aliases, sequence);

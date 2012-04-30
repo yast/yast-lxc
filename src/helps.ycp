@@ -55,13 +55,13 @@ _("<p>You can start selected container with <b>Start</b>. The container is start
     "create" : _("<p><b><big>Creating New Container</big></b></p>") +
 
     // Create dialog help, part 2
-_("<p>Choose a <b>Name</b>, <b>Template</b> and enter network settings for the new container.</p>") +
+_("<p>Choose a <b>Name</b> for your container, select a base <b>Template</b>, and enter desired network settings.</p>") +
 
     // Create dialog help, part 3
-_("<p>Use the value <tt>0.0.0.0</tt> as <b>IP Address</b> to have dynamic address assigned by DHCP. If there's no bridge device configured yet, use <b>Configure Network</b> button and create one.</p>") +
+_("<p>Use the value <tt>0.0.0.0</tt> as <b>IP Address</b> to have dynamic address assigned by DHCP. If there's no bridge device configured yet, use the <b>Configure Network</b> button and create one.</p>") +
 
     // Create dialog help, part 4
-_("<p>Select a root password to use in the container. If no password is entered, the default value <tt>root</tt> will be used.</p>") +
+_("<p>Select a password to use for a system administrator ('root') in the container. If no password is entered, the default value <tt>root</tt> will be used.</p>") +
 
     // Create dialog help, part 5
 _("<p>Use <b>Create</b> to start the creation process.</p>")

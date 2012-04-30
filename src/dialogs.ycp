@@ -46,6 +46,10 @@ include "lxc/helps.ycp";
 map<string,integer> console_pids = $[];
 
 
+/**
+ * Create configuration file for a container
+ * @return success
+ */
 boolean CreateContainerConfig (string name, string ip, string subnet, string bridge, string template)
 {
     // busy message
@@ -76,16 +80,15 @@ boolean CreateContainerConfig (string name, string ip, string subnet, string bri
         cmd     = cmd + " -t " + template;
     }
 
-    y2internal ("cmd: %1", cmd);
-
     map out     = (map) SCR::Execute (.target.bash_output, cmd);
-
-    y2internal ("out: %1", out);
 
     Popup::ClearFeedback ();
 
     if (out["exit"]:0 != 0)
     {
+        y2milestone ("cmd: %1", cmd);
+        y2milestone ("lxc-createconfig output: %1", out);
+
         // error message
         Report::Error (sformat (_("Error occured during configuration:
 
@@ -253,16 +256,16 @@ remove it and use the data you have just entered?
             {
                 cmd     = cmd + " -t " + template;
             }
-            y2internal ("cmd: %1", cmd);
 
             map out     = (map) SCR::Execute (.target.bash_output, cmd);
-
-            y2internal ("out: %1", out);
 
             Popup::ClearFeedback ();
 
             if (out["exit"]:0 != 0)
             {
+                y2milestone ("cmd: %1", cmd);
+                y2milestone ("lxc-create output: %1", out);
+
                 Report::Error (sformat (_("Error occured during container creation:
 
 %1"), out["stdout"]:""));
@@ -295,6 +298,7 @@ remove it and use the data you have just entered?
 
 /**
  * Start selected container
+ * @return success
  */
 boolean StartContainer (string name)
 {
@@ -324,7 +328,7 @@ Use 'lxc-console' command to connect to the running Container."), name));
  */
 void StopContainer (string name)
 {
-    y2internal ("lxc-stop: %1",
+    y2milestone ("result of lxc-stop: %1",
       SCR::Execute (.target.bash_output, "lxc-stop -n " + name)
     );
     if (console_pids[name]:nil != nil)
@@ -336,27 +340,28 @@ void StopContainer (string name)
 
 /**
  * Delete given container
+ * @return success
  */
-void DestroyContainer (string name)
+boolean DestroyContainer (string name)
 {
     // busy message
     Popup::ShowFeedback ("", sformat ("Destroying Container '%1'...", name));
 
     string cmd = "lxc-destroy -n " + name;
-//    string cmd = "lxc-destroy -f -n " + name;
     map out     = (map) SCR::Execute (.target.bash_output, cmd);
-
-    y2internal ("out: %1", out);
 
     Popup::ClearFeedback ();
 
     if (out["exit"]:0 != 0)
     {
+        y2milestone ("lxc-destroy output: %1", out);
         // error message
         Report::Error (sformat (_("Error while destroying:
 
 %1"), out["stdout"]:""));
+        return false;
     }
+    return true;
 }
 
 /**
@@ -384,6 +389,9 @@ any OverviewDialog () {
     // current container
     string selected     = "";
 
+    // mapping of containers to their state
+    map<string,boolean> lxc_map = $[];
+
     // update status of the buttons according to current item
     void update_buttons (string selected) {
 
@@ -392,8 +400,7 @@ any OverviewDialog () {
           return;
         }
 
-        term line = (term) UI::QueryWidget (`id (`table), `Item (selected));
-        boolean running     = line[2]:"" == "RUNNING"; // TODO do some better test
+        boolean running     = lxc_map[selected]:false;
         UI::ChangeWidget (`id (`start), `Enabled, !running);
         UI::ChangeWidget (`id (`stop), `Enabled, running);
         if (Lxc::textmode)
@@ -420,7 +427,15 @@ any OverviewDialog () {
     // update table with fresh items
     void update_table () {
 
-        list<term> lxc_list     = Lxc::GetContainers ();;
+        lxc_map     = Lxc::GetContainers ();
+        list<term> lxc_list     = maplist (string name, boolean status, lxc_map, {
+          return `item (name, status ?
+              // container status
+              _("Running") :
+              // container status
+              _("Stopped")
+          );
+        });
 
         UI::ChangeWidget (`id (`table), `Items, lxc_list);
         if (size (lxc_list) == 0)
@@ -466,6 +481,7 @@ any OverviewDialog () {
 
     Wizard::SetContentsButtons(caption, contents, HELPS["overview"]:"",
         Label::BackButton(), Label::FinishButton());
+    Wizard::HideBackButton ();
 
     update_table ();
 
