@@ -36,6 +36,7 @@ module "Lxc";
 textdomain "lxc";
 
 import "Directory";
+import "FileUtils";
 import "Progress";
 import "Security";
 
@@ -65,7 +66,9 @@ global list<term> ReadTemplates () {
   return ret;
 }
 
-// encrypt given password using current method
+/**
+ * Encrypt given password using current method
+ */
 global string CryptPassword (string pw) {
 
     if (method == "md5")
@@ -79,34 +82,40 @@ global string CryptPassword (string pw) {
     return crypt (pw);
 }
 
+/**
+ * Read list of available bridges
+ */
 global list<string> ReadBridgesIds () {
 
-    map out     = (map) SCR::Execute (.target.bash_output, "brctl show | tail -n +2 | cut -f 1");
     list<string> ret    = [];
-
-    if (out["stdout"]:"" != "")
+    if (FileUtils::Exists ("/sbin/brctl"))
     {
-      ret       = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
+      map out   = (map) SCR::Execute (.target.bash_output, "/sbin/brctl show | tail -n +2 | cut -f 1");
+
+      if (out["stdout"]:"" != "")
+      {
+        ret     = maplist (string line, splitstring (out["stdout"]:"", "\n"), ``(line));
+      }
     }
     return ret;
 }
 
-global list<term> GetContainers () {
+/**
+ * Read list of containers and their states
+ */
+global map<string,boolean> GetContainers () {
 
-  list<term> ret        = [];
-  map lxc_index         = $[];
+  map<string,boolean> ret       = $[];
 
   map out = (map) SCR::Execute (.target.bash_output, "lxc-ls -1");
 
   foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
-    if (line != "" && !haskey (lxc_index, line))
+    if (line != "" && !haskey (ret, line))
     {
       string cmd= sformat ("lxc-info -n %1 | grep state", line);
       out       = (map) SCR::Execute (.target.bash_output, cmd, $[ "LANG" : "C" ]);
       list<string> state        = splitstring (deletechars (out["stdout"]:"", " \t\n"), ":");
-      ret     = add (ret, `item (line, state[1]:""));
-      // FIXME translate
-      lxc_index[line]   = true;
+      ret[line] = state[1]:"" == "RUNNING";
     }
   });
   return ret;
@@ -118,14 +127,13 @@ global list<term> GetContainers () {
 boolean CheckLXCConfiguration () {
 
     boolean problem     = false;
-    // zgrep does not seem to work with .target.bash_output -> grep uncompressed config FIXME
+    // zgrep does not seem to work with .target.bash_output -> grep uncompressed config
     string tmpdir       = Directory::tmpdir;
     SCR::Execute (.target.bash_output, sformat (
       "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
 
     map out = (map) SCR::Execute (.target.bash_output, sformat (
-//      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
-      "GREP=grep /usr/bin/lxc-checkconfig"));
+      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
 
     list<string> rt     = [];
     map<string,string> colors   = $[
