@@ -9,7 +9,7 @@ BuildArchitectures:	noarch
 Summary:	Management tool for Linux Containers (LXC)
 
 %description
--
+Graphical management tool for Linux Containers (LXC)
 
 @PREP@
 
