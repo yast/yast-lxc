@@ -1,4 +1,11 @@
 -------------------------------------------------------------------
+Mon Aug 20 15:57:38 CEST 2012 - jsuchome@suse.cz
+
+- do not show wwarning when only "File capabilities" are missing
+  and module is run as root (bnc#776172)
+- 2.22.2
+
+-------------------------------------------------------------------
 Mon Apr 30 13:47:47 CEST 2012 - jsuchome@suse.cz
 
 - updated help texts

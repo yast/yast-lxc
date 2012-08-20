@@ -127,13 +127,17 @@ global map<string,boolean> GetContainers () {
 boolean CheckLXCConfiguration () {
 
     boolean problem     = false;
+
+    map out = (map) SCR::Execute (.target.bash_output, "/usr/bin/id --user");
+    boolean root = out["stdout"]:"" == "0\n";
+
     // zgrep does not seem to work with .target.bash_output -> grep uncompressed config
     string tmpdir       = Directory::tmpdir;
     SCR::Execute (.target.bash_output, sformat (
       "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
 
-    map out = (map) SCR::Execute (.target.bash_output, sformat (
-      "GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+    out = (map) SCR::Execute (.target.bash_output, sformat (
+      "LANG=C GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
 
     list<string> rt     = [];
     map<string,string> colors   = $[
@@ -168,7 +172,17 @@ boolean CheckLXCConfiguration () {
           }
           colored       = true;
           if (name == "red" || name == "yellow")
-            problem     = true;
+          {
+            // When running as root, "File capabilities" warning is not relevant (bnc#776172)
+            if (root && issubstring (line, "File capabilities"))
+            {
+              y2milestone ("File capabilities not met. Ignoring the warning for root user.");
+            }
+            else
+            {
+              problem     = true;
+            }
+          }
         }
       });
       // 'normalizing' color
