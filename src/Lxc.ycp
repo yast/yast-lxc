@@ -39,6 +39,7 @@ import "Directory";
 import "FileUtils";
 import "Progress";
 import "Security";
+import "String";
 
 
 // text or graphic mode?
@@ -134,10 +135,10 @@ boolean CheckLXCConfiguration () {
     // zgrep does not seem to work with .target.bash_output -> grep uncompressed config
     string tmpdir       = Directory::tmpdir;
     SCR::Execute (.target.bash_output, sformat (
-      "cp /proc/config.gz %1/ && gunzip %1/config.gz", tmpdir));
+      "cp /proc/config.gz '%1/' && gunzip '%1/config.gz'", String::Quote (tmpdir)));
 
     out = (map) SCR::Execute (.target.bash_output, sformat (
-      "LANG=C GREP=grep CONFIG=%1/config /usr/bin/lxc-checkconfig", tmpdir));
+      "LANG=C GREP=grep CONFIG='%1/config' /usr/bin/lxc-checkconfig", String::Quote (tmpdir)));
 
     list<string> rt     = [];
     map<string,string> colors   = $[
