@@ -51,6 +51,7 @@ string method           = "des";
 global list<term> ReadTemplates () {
 
   list<term> ret      = [];
+  // 'cut -f 2-' removes "lxc-" from start, but uses whole rest of string (including other -)
   map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2- -d -");
   if (out["stdout"]:"" != "")
   {
