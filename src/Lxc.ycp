@@ -52,7 +52,7 @@ string method           = "des";
 global list<term> ReadTemplates () {
 
   list<term> ret      = [];
-  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2 -d -");
+  map out = (map) SCR::Execute (.target.bash_output, "rpm -ql lxc | grep 'templates/' | cut -f 2- -d -");
   if (out["stdout"]:"" != "")
   {
     foreach (string line, sort (splitstring (out["stdout"]:"", "\n")), {
