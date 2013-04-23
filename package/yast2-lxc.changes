@@ -1,4 +1,11 @@
 -------------------------------------------------------------------
+Tue Apr 23 10:15:20 CEST 2013 - jsuchome@suse.cz
+
+- correctly filter list of templates (bnc#816518)
+- forbid spaces in container names (bnc#816078)
+- 2.24.0 
+
+-------------------------------------------------------------------
 Mon Aug 20 15:57:38 CEST 2012 - jsuchome@suse.cz
 
 - do not show wwarning when only "File capabilities" are missing
