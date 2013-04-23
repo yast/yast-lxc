@@ -38,6 +38,7 @@ import "Popup";
 import "Progress";
 import "Report";
 import "Security";
+import "String";
 import "Wizard";
 
 include "lxc/helps.ycp";
@@ -166,6 +167,7 @@ any AddDialog () {
       Label::CancelButton(), _("Create"));
 
     UI::ChangeWidget (`id (`ip), `ValidChars, IP::ValidChars4);
+    UI::ChangeWidget (`id (`name), `ValidChars, String::CGraph ());
 
     any ret = nil;
     while (true) {

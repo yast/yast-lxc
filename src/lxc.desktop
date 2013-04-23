@@ -16,7 +16,7 @@ X-SuSE-YaST-SortKey=
 X-SuSE-YaST-AutoInstResource=lxc
 
 Icon=yast-lxc
-Exec=/usr/bin/xdg-su -c '/sbin/yast2 lxc'
+Exec=/sbin/yast2 lxc
 
 Name=Lxc
 GenericName=lxc
