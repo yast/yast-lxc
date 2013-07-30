@@ -6,6 +6,8 @@ BuildRequires:	perl-XML-Writer update-desktop-files yast2 yast2-devtools yast2-t
 
 BuildArchitectures:	noarch
 
+Requires:       yast2-ruby-bindings >= 1.0.0
+
 Summary:	Management tool for Linux Containers (LXC)
 
 %description
@@ -23,7 +25,7 @@ Graphical management tool for Linux Containers (LXC)
 %defattr(-,root,root)
 %dir @yncludedir@/lxc
 @yncludedir@/lxc/*
-@clientdir@/lxc.ycp
+@clientdir@/lxc.rb
 @moduledir@/Lxc.*
 @desktopdir@/lxc.desktop
 %doc @docdir@
