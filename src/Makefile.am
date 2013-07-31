@@ -1,26 +1,20 @@
-# Makefile.am for lxc/src
+# Sources for lxc
+
+module_DATA = \
+  modules/Lxc.rb
+
+client_DATA = \
+  clients/lxc.rb
 
 yncludedir = @yncludedir@/lxc
+ynclude_DATA = \
+  include/lxc/wizards.rb \
+  include/lxc/dialogs.rb \
+  include/lxc/helps.rb
 
-client_DATA =			\
-	lxc.ycp
+desktop_DATA = \
+  desktop/lxc.desktop
 
-ynclude_DATA =			\
-        helps.ycp               \
-        wizards.ycp             \
-	dialogs.ycp
-
-desktop_DATA =			\
-	lxc.desktop
-
-module_DATA =			\
-	Lxc.ycp
-
-# create a symlink for local build, #145327
-lxc:
-	ln -sf . $@
-ycpchook = lxc
-
-EXTRA_DIST = $(client_DATA) $(ynclude_DATA) $(module_DATA) $(desktop_DATA)
+EXTRA_DIST = $(module_DATA) $(client_DATA) $(ynclude_DATA) $(desktop_DATA)
 
 include $(top_srcdir)/Makefile.am.common
