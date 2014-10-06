@@ -21,6 +21,7 @@ Version:        3.1.1
 Release:        0
 License:	GPL-2.0
 Group:		System/YaST
+url:            http://github.com/yast/yast-lxc
 
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 Source0:        %{name}-%{version}.tar.bz2
@@ -28,9 +29,10 @@ Source0:        %{name}-%{version}.tar.bz2
 
 Requires:	yast2 yast2-security lxc
 BuildRequires:	perl-XML-Writer update-desktop-files yast2 yast2-testsuite yast2-security
-BuildRequires:  yast2-devtools >= 3.1.10
+BuildRequires:  yast2-buildtools >= 3.1.10
+BuildRequires:  rubygem(yast-rake)
 
-BuildArchitectures:	noarch
+BuildArch:	noarch
 
 Requires:       yast2-ruby-bindings >= 1.0.0
 
@@ -42,12 +44,13 @@ Graphical management tool for Linux Containers (LXC)
 %prep
 %setup -n %{name}-%{version}
 
+%check
+rake test:unit
+
 %build
-%yast_build
 
 %install
-%yast_install
-
+rake install DESTDIR="%{buildroot}"
 
 %files
 %defattr(-,root,root)
