@@ -1,5 +1,9 @@
-# YaST - The LXC Configuration Module #
+Obsoleted Module
+================
 
-[![Travis Build](https://travis-ci.org/yast/yast-lxc.svg?branch=master)](https://travis-ci.org/yast/yast-lxc)
-[![Jenkins Build](http://img.shields.io/jenkins/s/https/ci.opensuse.org/yast-lxc-master.svg)](https://ci.opensuse.org/view/Yast/job/yast-lxc-master/)
+**This module is obsoleted and is not developed anymore.**
 
+GIT
+---
+
+If you want to see the last state check the [*master_old*](../master_old) branch.
